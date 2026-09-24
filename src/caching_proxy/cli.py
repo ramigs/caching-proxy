@@ -17,8 +17,8 @@ async def clear_cache() -> None:
 
 @app.command()
 def main_command(
-    port: int = typer.Option(None, "--port"),
-    origin: str = typer.Option(None, "--origin"),
+    port: int = typer.Option(None, "--port", envvar="PORT"),
+    origin: str = typer.Option(None, "--origin", envvar="ORIGIN"),
     clear_cache_flag: bool = typer.Option(False, "--clear-cache"),
 ):
     if clear_cache_flag:

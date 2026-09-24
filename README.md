@@ -22,7 +22,7 @@ project](https://roadmap.sh/projects/caching-server).
 
 This proxy implements **cache-aside** (a.k.a. lazy loading): the
 application itself checks the cache first, and on a miss, fetches from the
-origin and populates the cache — as opposed to *read-through*, where the
+origin and populates the cache — as opposed to _read-through_, where the
 cache layer itself would be responsible for reaching the origin
 transparently.
 
@@ -42,7 +42,7 @@ A few deliberate design decisions:
   respecting it here would mean caching nothing at all).
 - **Concurrent writes to the same key** (two simultaneous misses for the
   same URL) are resolved with an upsert (`INSERT ... ON CONFLICT DO
-  UPDATE`) rather than treated as an error — the second write just
+UPDATE`) rather than treated as an error — the second write just
   overwrites the first with fresher data instead of failing.
 
 ## Prerequisites
@@ -101,6 +101,12 @@ uv run caching-proxy --clear-cache
 This can be run independently of the running server — it connects to the
 same Postgres database and empties the `cache` table directly.
 
+`--port` and `--origin` can also be given as the `PORT` and `ORIGIN`
+environment variables, which is how the deployed container is configured.
+
+`GET /__health` is reserved: it's answered by the proxy itself (checking the
+database connection) and never forwarded to the origin or cached.
+
 ## Development
 
 ### Running tests
@@ -129,12 +135,49 @@ require network access.
 ### Linting and type-checking
 
 ```sh
-uv run ruff check .
-uv run pyright
+make lint   # ruff check, ruff format --check, pyright
+make test   # pytest
 ```
+
+### Building the image locally
+
+```sh
+docker build -t caching-proxy .
+docker run --rm --network caching-proxy_default --env-file .env \
+  -e POSTGRES_HOST=db -e PORT=8080 -e ORIGIN=https://dummyjson.com \
+  -p 8080:8080 caching-proxy
+```
+
+`POSTGRES_HOST=db` because inside a container `localhost` is the container
+itself; `db` is the Postgres service on the Compose network.
 
 ### pgAdmin
 
 pgAdmin is available at [http://localhost:5050](http://localhost:5050)
 (login from `.env`). Register a new server using host `db`, port `5432`,
 and the Postgres credentials from `.env`.
+
+## Deployment
+
+Deployed to [Railway](https://railway.com) as one project with two services:
+
+- **`Postgres`** — the `postgres:18` image with a volume at
+  `/var/lib/postgresql`. No public domain; reachable only on Railway's
+  private network.
+- **`caching-proxy`** — built from the `Dockerfile`. Runs
+  `alembic upgrade head` as a pre-deploy command (a failed migration stops
+  the deploy), and a deploy only goes live once `/__health` passes.
+
+Day to day, with the Railway CLI logged in (`railway login`) and this folder
+linked (`railway link`):
+
+```sh
+make deploy            # railway up: upload this folder, build, deploy
+make stop              # railway down: remove the latest deployment
+make clear-cache-prod  # run --clear-cache inside the running container
+```
+
+`make deploy` uploads the working directory as-is, including uncommitted
+changes — commit first so every deployment matches a commit.
+`make clear-cache-prod` goes through `railway ssh`, which needs an SSH key
+registered with your Railway account.

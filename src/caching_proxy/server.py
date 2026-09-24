@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, Response
+from sqlalchemy import text
 
 from caching_proxy.db.engine import get_engine
 from caching_proxy.db.queries import lookup, write
@@ -48,6 +49,17 @@ async def forward_to_origin(request: Request, full_path: str) -> httpx.Response:
         headers=headers,
         content=await request.body(),
     )
+
+
+# Registered before the catch-all proxy route so it takes precedence: answered
+# directly, never forwarded to the origin or cached. Checks the database only —
+# the origin being down shouldn't mark this service unhealthy.
+@app.get("/__health")
+async def health():
+    engine = get_engine()
+    async with engine.connect() as connection:
+        await connection.execute(text("SELECT 1"))
+    return {"status": "ok"}
 
 
 @app.api_route(

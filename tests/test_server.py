@@ -1,6 +1,14 @@
 from caching_proxy.server import HOP_BY_HOP_HEADERS
 
 
+async def test_health_check_is_answered_directly_not_proxied(client):
+    response = await client.get("/__health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "x-cache" not in response.headers
+
+
 async def test_get_request_is_a_cache_miss_the_first_time(client):
     response = await client.get("/products/1")
 
